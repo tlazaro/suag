@@ -1,4 +1,4 @@
-package suag.v2
+package suag
 
 import language.higherKinds
 
