@@ -1,6 +1,6 @@
 package suag
 
-import scala.language.implicitConversions
+import scala.language.{ implicitConversions, higherKinds }
 import scala.language.experimental.macros
 import shapeless._
 import syntax.singleton._
@@ -9,8 +9,7 @@ import record._
 sealed trait AttributedFunction {
   type Dependencies <: HList
   type Products <: HList
-
-  def apply[Ctx <: HList: AttrList](ctx: Ctx): Ctx
+  def apply(ctx: Context[Dependencies]): Context[Products]
 }
 object AttributedFunction {
   type Aux[Deps, Prods] = AttributedFunction {
@@ -18,7 +17,13 @@ object AttributedFunction {
     type Products = Prods
   }
 
-  def apply[Deps <: HList: AttrList, Prods <: HList: AttrList](deps: Deps): Aux[Deps, Prods] = ???
+  class Applier[Deps <: HList, AttrValues <: HList] {
+    def define[Prods <: HList: AttrValueList](f: Context[AttrValues] => Prods): Aux[Deps, Prods] = ???
+  }
+  
+  def apply[Deps <: HList: AttrList, AttrValues <: HList](deps: Deps)(
+    implicit attributedDeps: ops.hlist.Mapper.Aux[attr2attrValue.type, Deps, AttrValues]/*,
+    attributedProds: ops.hlist.Mapper[attr2attrValue.type, Prods]*/) = new Applier[Deps, AttrValues]
 }
 
 trait AttrList[H <: HList]
@@ -68,6 +73,10 @@ class AttributesMacros(val c: scala.reflect.macros.whitebox.Context) {
 
 sealed trait Attribute[Key, Value]
 case class AttributedValue[Key, Value](value: Value) extends Attribute[Key, Value]
+
+object attr2attrValue extends Poly1 {
+  implicit def attr[K, V]: Case[suag.Attribute[K, V]] { type Result = suag.AttributedValue[K, V] } = null
+}
 
 object Attributes {
   trait AttributeDefinition[K] {

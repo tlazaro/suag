@@ -13,6 +13,11 @@ class AttributedFunctionsTest {
   context("width")
   context("height")
   context("name")
-  context("doesNotCompile")
+  test.illTyped("""context("doesNotCompile")""")
+  
+  val pf = AttributedFunction(width :: height :: name :: HNil).define { ctx =>
+    ctx("width")
+    (name := "naaame") :: HNil
+  }
 
 }
