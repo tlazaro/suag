@@ -10,6 +10,11 @@ resolvers ++= Seq(
   "Sonatype Releases" at "http://oss.sonatype.org/content/repositories/releases"
 )
 
+scalacOptions ++= Seq(
+  "-Yinfer-argument-types"/*,
+  "-Xlog-implicits"*/
+)
+
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-reflect" % scalaVersion.value,
   "org.scalacheck" %% "scalacheck" % "1.11.5" % "test",

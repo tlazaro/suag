@@ -17,7 +17,7 @@ object AttributedFunction {
     type Dependencies = Deps
     type Products = Prods
   }
-  
+
   def apply[Deps <: HList: AttrList, Prods <: HList: AttrList](deps: Deps): Aux[Deps, Prods] = ???
 }
 
@@ -33,14 +33,27 @@ object AttrValueList {
 }
 
 case class Context[H <: HList: AttrValueList](values: H) {
-  def apply(key: Witness) = ???
+  def apply[Out](key: Witness)(implicit selector: Context.ValueSelector[key.T, H, Out]) = selector(values)
+}
+object Context {
+  trait ValueSelector[Key, H <: HList, Out] {
+    def apply(c: H): Out
+  }
+  implicit def headSelect[Key, Out, A[K, V] <: AttributedValue[K, V], Tail <: HList]: ValueSelector[Key, A[Key, Out] :: Tail, Out] = head.asInstanceOf[ValueSelector[Key, A[Key, Out] :: Tail, Out]]
+  implicit def tailSelect[Key, Out, H, Tail <: HList](implicit tailSel: ValueSelector[Key, Tail, Out]): ValueSelector[Key, H :: Tail, Out] = new ValueSelector[Key, H :: Tail, Out] {
+    def apply(c) = tailSel(c.tail)
+  }
+
+  private val head = new ValueSelector[Any, _ :: HList, Any] {
+    def apply(c) = c.asInstanceOf[Any :: HList].head.asInstanceOf[AttributedValue[_, _]].value
+  }
 }
 
 class AttributesMacros(val c: scala.reflect.macros.whitebox.Context) {
   import c.universe._
   def mkAttributeImpl(a: c.Tree): c.Tree = {
     val witness = SingletonTypeMacros.convertImpl(c)(c.Expr[Any](a)).tree
-//    println(s"Witness: $witness")
+    //    println(s"Witness: $witness")
     val witnessName = TermName(c.freshName("witness"))
     val res = q"""
       val $witnessName = $witness
@@ -63,7 +76,7 @@ object Attributes {
   }
 
   implicit def mkAttributeOps(a: Any): AttributeDefinition[_] = macro AttributesMacros.mkAttributeImpl
-  
+
   implicit class AttributeOps[Key, Value](val attr: Attribute[Key, Value]) extends AnyVal {
     def :=(v: Value) = AttributedValue[Key, Value](v)
   }

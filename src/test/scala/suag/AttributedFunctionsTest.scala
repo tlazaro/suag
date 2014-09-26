@@ -5,7 +5,14 @@ import Attributes._
 
 class AttributedFunctionsTest {
 
-  val s = "length".@:[Int]
-  
-  implicitly[AttrList[s.type :: s.type :: HNil]]
+  val width = "width".@:[Double]
+  val height = "height".@:[Double]
+  val name = "name".@:[String]
+  val context = Context((width := 100) :: (height := 200) :: (name := "robert") :: HNil)
+
+  context("width")
+  context("height")
+  context("name")
+  context("doesNotCompile")
+
 }
