@@ -4,6 +4,8 @@ version := "1.0"
 
 scalaVersion := "2.11.2"
 
+fork := true
+
 resolvers ++= Seq(
   "Sonatype Releases" at "http://oss.sonatype.org/content/repositories/releases"
 )
