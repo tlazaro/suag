@@ -79,39 +79,6 @@ object Applicatives {
 object Parsers {
   import Applicatives._
 
-
-  /**
-   * type Parser s a = [s] -> [(a, [s])]
-   * Implemented as synthetic wrapper over Stream[S] => Stream[(A, Stream[S])] to simplify type error reporting to Parser[S, A]
-   */
-  class Parser[S, +A](val f: Stream[S] => Stream[(A, Stream[S])]) extends AnyVal {
-    def apply(s: => Stream[S]): Stream[(A, Stream[S])] = f(s)
-    //def apply(s: => Seq[S]): Stream[(A, Stream[S])] = f(s.toStream)
-  }
-  def Parser[S, A](f: Stream[S] => Stream[(A, Stream[S])]): Parser[S, A] = new Parser[S, A](f)
-
-  def pFail[S, A]: Parser[S, A] = Parser(inp => Stream.empty)
-
-  def pSucceed[S, A](v: => A): Parser[S, A] = Parser(inp => Stream((v, inp)))
-
-  def pSym[S](a: => S): Parser[S, S] = Parser {
-    case s #:: ss if a == s => Stream((a, ss))
-    case _ => Stream.empty
-  }
-
-  def pTok[S](tok: => Stream[S]): Parser[S, S] = {
-    def zippy(toks: Stream[S], inp: Stream[S]): Stream[(S, Stream[S])] = (toks, inp) match {
-      case (Stream.Empty, _) => Stream.Empty
-      case (_, Stream.Empty) => Stream.Empty
-      case (a #:: as, s #:: ss) => (a, ss) #:: zippy(as, ss)
-    }
-    
-    Parser {
-      case s if s startsWith tok => zippy(tok, s)
-      case _ => Stream.empty
-    }
-  }
-
   implicit def ParserApplicative[S] = new Applicative[({ type P[A] = Parser[S, A] })#P] {
     def pure[A](a: => A) = pSucceed(a)
 
@@ -133,81 +100,59 @@ object Parsers {
    */
   type PParser[S] = {
     type P[+A] = Parser[S, A]
-
   }
 
   implicit def parserSyntax1[A, B, S] = AppSyntax1[PParser[S]#P, A, B](_: PParser[S]#P[A => B])
   implicit def parserSyntax2[A, B, S] = AppSyntax2[PParser[S]#P, A, B](_: A => B)
   implicit def parserSyntax3[A, S] = AppSyntax3[PParser[S]#P, A](_: PParser[S]#P[A])
   implicit def parserSyntax4[A, S] = AppSyntax4[PParser[S]#P, A](_: A)
+
+  /**
+   * type Parser s a = [s] -> [(a, [s])]
+   * Implemented as synthetic wrapper over Stream[S] => Stream[(A, Stream[S])] to simplify type error reporting to Parser[S, A]
+   */
+  class Parser[S, +A](val f: Stream[S] => Stream[(A, Stream[S])]) extends AnyVal {
+    def apply(s: => Stream[S]): Stream[(A, Stream[S])] = f(s)
+    //def apply(s: => Seq[S]): Stream[(A, Stream[S])] = f(s.toStream)
+  }
+  def Parser[S, A](f: => Stream[S] => Stream[(A, Stream[S])]): Parser[S, A] = new Parser[S, A](f)
+
+  def pFail[S, A]: Parser[S, A] = Parser(inp => Stream.empty)
+
+  def pSucceed[S, A](v: => A): Parser[S, A] = Parser(inp => Stream((v, inp)))
+
+  def pSym[S](a: => S): Parser[S, S] = Parser {
+    case s #:: ss if a == s => Stream((a, ss))
+    case _ => Stream.empty
+  }
+
+  // Accepts and consumes any input
+  def pAny[S]: Parser[S, S] = Parser {
+    case head #:: tail => Stream((head, tail))
+    case Stream.Empty => Stream.Empty
+  }
+
+  def pTok[S](tok: => Stream[S]): Parser[S, S] = {
+    def zippy(toks: Stream[S], inp: Stream[S]): Stream[(S, Stream[S])] = (toks, inp) match {
+      case (Stream.Empty, _) => Stream.Empty
+      case (_, Stream.Empty) => Stream.Empty
+      case (a #:: as, s #:: ss) => (a, ss) #:: zippy(as, ss)
+    }
+    
+    Parser {
+      case s if s startsWith tok => zippy(tok, s)
+      case _ => Stream.empty
+    }
+  }
+
+  // Wrappers
+  def pParens[S, A](l: S)(r: S)(p: Parser[S, A]): Parser[S, A] = {
+    pSym(l) *> p <* pSym(r)
+  }
 }
 
 object Test2 extends App {
   import Parsers._, Applicatives._
-
-
-  def pair[A, B] = (a: A) => (a, _: B)
-
-  def comb[S, A, B]: Parser[S, A => B => (A, B)] = pSucceed(pair)
-
-  val AorB = pSym('A') <|> pSym('B')
-
-  val AoptB = pSym('A') opt 'B'
-
-  val pABbase = comb <*> pSym('A') <*> pSym('B')
-
-  val pAB = pair <&> pSym('A') <*> pSym('B')
-
-  AorB("A".toStream)
-  pABbase("AB".toStream)
-  pAB("A".toStream)
-
-  // Zero or more 'p'
-  def cons[A] = (a: A) => (l: Stream[A]) => (a #:: l)
-  def pList[S, A](p: Parser[S, A]): Parser[S, Stream[A]] = cons <&> p <*> pList(p) opt Stream.empty
-
-  // USE 1
-  case class SemIfStat(cond: String, ifpart: String, thenpart: String)
-
-  def pIfStatPrelude[T]: T => String => T => String => T => String => T => SemIfStat =
-    _ => c => _ => t => _ => e => _ => SemIfStat(c, t, e)
-
-  val pIfToken = pSym("IF")
-  val pThenToken = pSym("THEN")
-  val pElseToken = pSym("ELSE")
-  val pFiToken = pSym("FI")
-  val pExpr = pSym("X") <|> pSym("Y") <|> pSym("Z")
-
-  val pIfStat = pIfStatPrelude <&>
-    pIfToken <*> pExpr <*>
-    pThenToken <*> pExpr <*>
-    pElseToken <*> pExpr <*>
-    pFiToken
-
-  val ifTest = pIfStat(Stream("IF", "X", "THEN", "Y", "ELSE", "Z", "FI"))
-
-  // USE 2
-  case class SemIfStat2(cond: String, ifpart: String, thenpart: String)
-
-  val pIfStat2 = SemIfStat2.curried <&
-    pIfToken <*> pExpr <*
-    pThenToken <*> pExpr <*
-    pElseToken <*> pExpr <*
-    pFiToken
-
-  val ifTest2 = pIfStat2(Stream("IF", "X", "THEN", "Y", "ELSE", "Z", "FI"))
-
-  // Count
-  // S -> (S)
-  def count[S]: S => Int = _ => 1
-  val pPPP = count <& pSym('(')
-
-  // Balanced nested parenthesis
-  // S -> (S) S | ·
-
-  def pP: Parser[Char, Int] = ((math.max _).curried compose (1 + (_: Int))) <& pSym('(') <*> pP <* pSym(')') <*> pP opt 0
-  val pPTest = pP(Stream('(', ')'))
-  println(pPTest)
 
   // Lists reduction, are these foldLeft and foldRight?
   def flip[A, B, C] = (f: A => B => C) => (b: B) => (a: A) => f(a)(b)
@@ -222,11 +167,6 @@ object Test2 extends App {
 
   def pChainr[S, C](sep: Parser[S, C => C => C])(p: Parser[S, C]): Parser[S, C] = {
     p `<??>` (flip <&> sep <*> pChainr(sep)(p))
-  }
-
-  // Wrappers
-  def pParens[S, A](l: S)(r: S)(p: Parser[S, A]): Parser[S, A] = {
-    pSym(l) *> p <* pSym(r)
   }
 
   object Expressions {
@@ -299,6 +239,7 @@ object Test2 extends App {
 
     def func(p: => Parser[Char, Int], q: => Parser[Char, Int]) = p <|> q
 
+    // Diverges after n is higher than 'a' and will never match again
     val pABC = foldr(count map abc)(pFail[Char, Int])(func)
   }
 }
